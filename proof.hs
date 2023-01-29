@@ -114,21 +114,51 @@ seekDown (QEI phi s t pf, ctx) = seekDown (pf, DownQEI phi s t ctx)
 seekDown (QEE pf1 pf2, ctx) = seekDown (pf1, LeftQEE ctx pf2)
 seekDown (RBV s pf, ctx) = seekDown (pf, DownRBV s ctx)
 
-{--------------------- ŹLE ------------------------------------
--- funkcja do wychodzenia
-caseDown :: Location -> (Proof -> Location) -> Either String Location 
-caseDown loc cont = case seekDown loc of 
-                      Just loc' -> seekUp $ cont $ fst loc 
-                      Nothing -> collapseToTheorem (fst loc) >>= \thm -> seekUp $ cont (Ready thm) 
+wrap :: Path -> Theorem -> Either String Location 
+wrap ctx thm = Right (Ready thm, ctx)
+
+caseDown :: Proof -> Path -> (Proof -> Proof) -> Either String Location
+caseDown pf ctx cnt = case pf of 
+                        Ready _ -> collapseToTheorem (cnt pf) >>= wrap ctx 
+                        _       -> Right (cnt pf, ctx)
 
 seekUp :: Location -> Either String Location 
-seekUp l@(pf, Root) = case seekDown l of 
-                        Just loc' -> Right loc' 
-                        Nothing -> collapseToTheorem pf >>= \thm -> return (Ready thm, Root)
-seekUp l@(_, DownImpI phi ctx) = caseDown l $ \pf -> (ImpI phi pf, ctx)
-seekUp (pf1, LeftImpE ctx pf2) = case seekDown loc of 
-                                    Just loc' -> Right loc' 
-                                    Nothing -> seekUp loc 
-                                   where loc = (pf2, RightImpE pf1 ctx)
-seekUp l@(_, RightImpE pf1 ctx) = caseDown l $ \pf2 -> (ImpE pf1 pf2, ctx)
--}
+seekUp (pf, Root) = Right (pf, Root)
+seekUp (pf, DownImpI phi ctx) = caseDown pf ctx (ImpI phi)
+seekUp (pf1, LeftImpE ctx pf2) = case seekDown (pf2, RightImpE pf1 ctx) of 
+                                  Just loc -> Right loc
+                                  Nothing  -> collapseToTheorem pf2 >>= \thm -> seekUp (Ready thm, RightImpE pf1 ctx)
+seekUp (pf2, RightImpE pf1 ctx) = case (pf1, pf2) of 
+                                    (Ready _, Ready _) -> collapseToTheorem (ImpE pf1 pf2) >>= wrap ctx
+                                    _                  -> Right (ImpE pf1 pf2, ctx)
+seekUp (pf, DownSpikeE phi ctx) = caseDown pf ctx (SpikeE phi)
+seekUp (pf, DownQUI s ctx) = caseDown pf ctx (QUI s)
+seekUp (pf, DownQUE t ctx) = caseDown pf ctx (QUE t)
+seekUp (pf1, LeftAndI ctx pf2) = case seekDown (pf2, RightAndI pf1 ctx) of 
+                                  Just loc -> Right loc 
+                                  Nothing  -> collapseToTheorem pf2 >>= \thm -> seekUp (Ready thm, RightAndI pf1 ctx)
+seekUp (pf2, RightAndI pf1 ctx) = case (pf1, pf2) of 
+                                    (Ready _, Ready _) -> collapseToTheorem (AndI pf1 pf2) >>= wrap ctx 
+                                    _ -> Right (AndI pf1 pf2, ctx)
+seekUp (pf, DownAndE1 ctx) = caseDown pf ctx AndE1 
+seekUp (pf, DownAndE2 ctx) = caseDown pf ctx AndE2 
+seekUp (pf, DownOrI1 phi ctx) = caseDown pf ctx (OrI1 phi)
+seekUp (pf, DownOrI2 phi ctx) = caseDown pf ctx (OrI2 phi)
+seekUp (pf1, LeftOrE ctx pf2 pf3) = case seekDown (pf2, MiddleOrE pf1 ctx pf3) of 
+                                      Just loc -> Right loc 
+                                      Nothing  -> collapseToTheorem pf2 >>= \thm -> seekUp (Ready thm, MiddleOrE pf1 ctx pf3)
+seekUp (pf2, MiddleOrE pf1 ctx pf3) = case seekDown (pf3, RightOrE pf1 pf2 ctx) of
+                                        Just loc -> Right loc 
+                                        Nothing  -> seekUp (pf3, RightOrE pf1 pf2 ctx)
+seekUp (pf3, RightOrE pf1 pf2 ctx) = case (pf1, pf2, pf3) of 
+                                      (Ready _, Ready _, Ready _) -> collapseToTheorem (OrE pf1 pf2 pf3) >>= wrap ctx 
+                                      _                           -> Right (OrE pf1 pf2 pf3, ctx)
+seekUp (pf, DownQEI phi s t ctx) = caseDown pf ctx (QEI phi s t)
+seekUp (pf1, LeftQEE ctx pf2) = case seekDown (pf2, RightQEE pf1 ctx) of 
+                                  Just loc -> Right loc 
+                                  Nothing  -> collapseToTheorem pf2 >>= \thm -> seekUp (Ready thm, RightQEE pf1 ctx)
+seekUp (pf2, RightQEE pf1 ctx) = case (pf1, pf2) of 
+                                  (Ready _, Ready _) -> collapseToTheorem (QEE pf1 pf2) >>= wrap ctx 
+                                  _                  -> Right (QEE pf1 pf2, ctx)
+seekUp (pf, DownRBV s ctx) = caseDown pf ctx (RBV s)
+
