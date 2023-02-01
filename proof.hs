@@ -1,6 +1,7 @@
 module Proof where 
 import Logic
 import Control.Applicative ( Alternative((<|>)) )
+import qualified Data.List as List
 
 type Assumptions = [(String, Formula)]
 
@@ -20,7 +21,7 @@ data Proof =
     | OrE Proof Proof Proof 
     | QEI Formula String Term Proof -- w formule ϕ za zmienną x podstawiamy term t i udowadniamy wynik
     | QEE Proof Proof -- udowadniamy, że coś istnieje, i korzystamy z tego w innym dowodzie; może być potrzebne skorzystanie z RBV
-    | RBV String Proof   -- dowód formuły z kwantyfikatorem i nowa nazwa zmiennej związanej
+    | Equiv Formula Proof   -- dowód formuły z kwantyfikatorem i nowa nazwa zmiennej związanej
 
 data Path = 
       Root 
@@ -42,7 +43,7 @@ data Path =
     | DownQEI Formula String Term Path 
     | LeftQEE Path Proof 
     | RightQEE Proof Path 
-    | DownRBV String Path 
+    | DownEquiv Formula Path 
 
 type Location = (Proof, Path)
 
@@ -61,7 +62,7 @@ goal (AndE2 pf) = goal pf
 goal (OrI1 _ pf) = goal pf 
 goal (OrI2 _ pf) = goal pf
 goal (QEI _ _ _ pf) = goal pf 
-goal (RBV _ pf) = goal pf 
+goal (Equiv _ pf) = goal pf 
 goal (ImpE pf1 pf2) = goal pf1 <|> goal pf2 
 goal (AndI pf1 pf2) = goal pf1 <|> goal pf2 
 goal (OrE pf1 pf2 pf3) = goal pf1 <|> goal pf2 <|> goal pf3 
@@ -92,7 +93,7 @@ collapseToTheorem (QEI phi s t pf) = collapseToTheorem pf >>= qeI phi s t
 collapseToTheorem (QEE pf1 pf2) = do thm1 <- collapseToTheorem pf1 
                                      thm2 <- collapseToTheorem pf2 
                                      qeE thm1 thm2 
-collapseToTheorem (RBV s pf) = collapseToTheorem pf >>= flip rbv s 
+collapseToTheorem (Equiv phi pf) = collapseToTheorem pf >>= flip equiv phi 
 
 seekDown :: Location -> Maybe Location 
 seekDown loc@(Goal _ _, _) = Just loc 
@@ -112,17 +113,17 @@ seekDown (OrE pf1 pf2 pf3, ctx) =   seekDown (pf1, LeftOrE   ctx pf2 pf3)
                                 <|> seekDown (pf3, RightOrE  pf1 pf2 ctx)
 seekDown (QEI phi s t pf, ctx) = seekDown (pf, DownQEI phi s t ctx)
 seekDown (QEE pf1 pf2, ctx) = seekDown (pf1, LeftQEE ctx pf2)
-seekDown (RBV s pf, ctx) = seekDown (pf, DownRBV s ctx)
+seekDown (Equiv phi pf, ctx) = seekDown (pf, DownEquiv phi ctx)
 
 wrap :: Path -> Theorem -> Either String Location 
-wrap ctx thm = Right (Ready thm, ctx)
+wrap ctx thm = seekUp (Ready thm, ctx)
 
 caseDown :: Proof -> Path -> (Proof -> Proof) -> Either String Location
 caseDown pf ctx cnt = case pf of 
                         Ready _ -> collapseToTheorem (cnt pf) >>= wrap ctx 
                         _       -> Right (cnt pf, ctx)
 
-seekUp :: Location -> Either String Location 
+seekUp :: Location -> Either String Location -- samo gęste
 seekUp (pf, Root) = Right (pf, Root)
 seekUp (pf, DownImpI phi ctx) = caseDown pf ctx (ImpI phi)
 seekUp (pf1, LeftImpE ctx pf2) = case seekDown (pf2, RightImpE pf1 ctx) of 
@@ -130,7 +131,7 @@ seekUp (pf1, LeftImpE ctx pf2) = case seekDown (pf2, RightImpE pf1 ctx) of
                                   Nothing  -> collapseToTheorem pf2 >>= \thm -> seekUp (Ready thm, RightImpE pf1 ctx)
 seekUp (pf2, RightImpE pf1 ctx) = case (pf1, pf2) of 
                                     (Ready _, Ready _) -> collapseToTheorem (ImpE pf1 pf2) >>= wrap ctx
-                                    _                  -> Right (ImpE pf1 pf2, ctx)
+                                    _                  -> seekUp (ImpE pf1 pf2, ctx)
 seekUp (pf, DownSpikeE phi ctx) = caseDown pf ctx (SpikeE phi)
 seekUp (pf, DownQUI s ctx) = caseDown pf ctx (QUI s)
 seekUp (pf, DownQUE t ctx) = caseDown pf ctx (QUE t)
@@ -139,7 +140,7 @@ seekUp (pf1, LeftAndI ctx pf2) = case seekDown (pf2, RightAndI pf1 ctx) of
                                   Nothing  -> collapseToTheorem pf2 >>= \thm -> seekUp (Ready thm, RightAndI pf1 ctx)
 seekUp (pf2, RightAndI pf1 ctx) = case (pf1, pf2) of 
                                     (Ready _, Ready _) -> collapseToTheorem (AndI pf1 pf2) >>= wrap ctx 
-                                    _ -> Right (AndI pf1 pf2, ctx)
+                                    _ -> seekUp (AndI pf1 pf2, ctx)
 seekUp (pf, DownAndE1 ctx) = caseDown pf ctx AndE1 
 seekUp (pf, DownAndE2 ctx) = caseDown pf ctx AndE2 
 seekUp (pf, DownOrI1 phi ctx) = caseDown pf ctx (OrI1 phi)
@@ -152,13 +153,106 @@ seekUp (pf2, MiddleOrE pf1 ctx pf3) = case seekDown (pf3, RightOrE pf1 pf2 ctx) 
                                         Nothing  -> seekUp (pf3, RightOrE pf1 pf2 ctx)
 seekUp (pf3, RightOrE pf1 pf2 ctx) = case (pf1, pf2, pf3) of 
                                       (Ready _, Ready _, Ready _) -> collapseToTheorem (OrE pf1 pf2 pf3) >>= wrap ctx 
-                                      _                           -> Right (OrE pf1 pf2 pf3, ctx)
+                                      _                           -> seekUp (OrE pf1 pf2 pf3, ctx)
 seekUp (pf, DownQEI phi s t ctx) = caseDown pf ctx (QEI phi s t)
 seekUp (pf1, LeftQEE ctx pf2) = case seekDown (pf2, RightQEE pf1 ctx) of 
                                   Just loc -> Right loc 
                                   Nothing  -> collapseToTheorem pf2 >>= \thm -> seekUp (Ready thm, RightQEE pf1 ctx)
 seekUp (pf2, RightQEE pf1 ctx) = case (pf1, pf2) of 
                                   (Ready _, Ready _) -> collapseToTheorem (QEE pf1 pf2) >>= wrap ctx 
-                                  _                  -> Right (QEE pf1 pf2, ctx)
-seekUp (pf, DownRBV s ctx) = caseDown pf ctx (RBV s)
+                                  _                  -> seekUp (QEE pf1 pf2, ctx)
+seekUp (pf, DownEquiv phi ctx) = caseDown pf ctx (Equiv phi)
 
+next :: Location -> Either String Location 
+next loc@(_, Root) = case seekDown loc of 
+                      Just loc' -> Right loc' 
+                      Nothing   -> Left "next: no more goals"
+next loc = case seekUp loc of 
+            Right (pf, Root) -> next (pf, Root)
+            res              -> res 
+
+--- konstruowanie drzewa dowodu
+--  Niezmiennik: funkcja zwraca lokalizację jakiegoś celu wtedy i tylko wtedy,
+--               gdy w dowodzie po zastosowaniu reguły istnieje cel. 
+introImp :: String -> Location -> Either String Location 
+introImp s (Goal gamma (Binop phi Imp psi), ctx) = Right (Goal (List.union gamma [(s, phi)]) psi, DownImpI phi ctx)
+introImp _ _ = Left "introImp: no implication to introduce"
+
+-- w tym miejscu użytkownik wybiera świeżą zmienną
+-- można od razu zrobić RBV
+introForall ::  Location -> Either String Location 
+introForall (Goal gamma (QU x phi), ctx) 
+  | not (any (freeInFormula x . snd) gamma) = Right (Goal gamma phi, DownQUI x ctx)
+  | otherwise = Left "introForall: bad choice of name for fresh variable"
+introForall _ = Left "introForall: no universal quantifier to introduce"
+
+{-  Γ ⊢ ∀x φ      Znów „cofamy podstawienie”. 
+ -------------∀e  Użytkownik mając φ' podaje nazwę zmiennej x, term t oraz formułę φ,
+     Γ ⊢ φ'       takie że φ[x/t] = φ'. -}
+elimForall :: Location -> String -> Term -> Formula -> Either String Location 
+elimForall (Goal gamma phi', ctx) s t phi = case substInFormula phi s t of 
+                                              Just psi -> if psi == phi' 
+                                                            then Right (Goal gamma (QU s phi), DownQUE t ctx) 
+                                                            else Left "elimForall: bad formula or term"
+                                              Nothing  -> Left "elimForall: inadmissible substitution"
+
+elimImp :: Location -> Formula -> Either String Location 
+elimImp (Goal gamma psi, ctx) phi = Right (Goal gamma (Binop phi Imp psi), LeftImpE ctx (Goal gamma phi))
+elimImp _ _ = Left "elimImp: not at goal"
+
+elimSpike :: Location -> Either String Location 
+elimSpike (Goal gamma phi, ctx) = Right (Goal gamma Spike, DownSpikeE phi ctx)
+elimSpike _  = Left "elimSpike: not at goal"
+
+readyByAssumption :: Location -> String -> Either String Location 
+readyByAssumption (Goal gamma phi, ctx) ass = case lookup ass gamma of 
+                                                Just psi -> if psi == phi 
+                                                              then next (Ready $ byAssumption phi, ctx) 
+                                                              else Left "readyByAssumption: wrong assumption for this goal"
+                                                Nothing  -> Left "readyByAssumption: no such assumption"
+readyByAssumption _ _ = Left "readyByAssumption: not at goal"
+
+readyByTheorem :: Location -> Theorem -> Either String Location 
+readyByTheorem (Goal gamma psi, ctx) thm = if all (`elem` map snd gamma) (assumptions thm) && consequence thm == psi
+                                            then next (Ready thm, ctx)
+                                            else Left "readyByTheorem: wrong theorem for this goal"
+readyByTheorem _ _ = Left "readyByTheorem: not at goal"
+
+introAnd :: Location -> Either String Location 
+introAnd (Goal gamma (Binop phi And psi), ctx) = Right (Goal gamma phi, LeftAndI ctx (Goal gamma psi))
+introAnd _ = Left "introAnd: no conjunction to introduce"
+
+introOr :: Location -> Bool -> Either String Location 
+introOr (Goal gamma (Binop phi Or psi), ctx) left = Right $ if left 
+                                                              then (Goal gamma phi, DownOrI1 psi ctx)
+                                                              else (Goal gamma psi, DownOrI2 phi ctx)
+introOr _ _ = Left "introOr: no disjunction to introduce"
+
+introExists :: Location -> Term -> Either String Location 
+introExists (Goal gamma (QE x phi), ctx) t = case substInFormula phi x t of 
+                                               Just phi' -> Right (Goal gamma phi', DownQEI phi x t ctx)
+                                               Nothing   -> Left "introExists: inadmissible substitution"
+introExists _ _ = Left "introExists: no existential quantifier to introduce"
+
+elimAnd :: Location -> Formula -> Bool -> Either String Location
+elimAnd (Goal gamma phi, ctx) psi left = Right $ if left 
+                                                  then (Goal gamma (Binop phi And psi), DownAndE1 ctx)
+                                                  else (Goal gamma (Binop psi And phi), DownAndE2 ctx)
+elimAnd _ _ _ = Left "elimAnd: not at goal"
+
+elimOr :: Location -> Formula -> String -> Formula -> String -> Either String Location
+elimOr (Goal gamma phi, ctx) psi psiName lambda lambdaName = Right (Goal gamma (Binop psi Or lambda), 
+                                                                    LeftOrE ctx 
+                                                                            (Goal (List.union gamma [(psiName, psi)]) phi)
+                                                                            (Goal (List.union gamma [(lambdaName, lambda)]) phi))
+elimOr _ _ _ _ _ = Left "elimOr: not at goal"
+
+elimExists :: Location -> Formula -> String -> String -> Either String Location 
+elimExists (Goal gamma phi, ctx) psi x psiName = Right (Goal gamma (QE x psi), 
+                                                        LeftQEE ctx
+                                                                (Goal (List.union gamma [(psiName, psi)]) phi))
+elimExists _ _ _ _ = Left "elimExists: not at goal"
+
+equivRule :: Location -> Formula -> Either String Location 
+equivRule (Goal gamma phi, ctx) psi = Right (Goal gamma psi, DownEquiv phi ctx)
+equivRule _ _ = Left "equivRule: not at goal"
