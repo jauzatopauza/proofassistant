@@ -132,7 +132,7 @@ quE (gamma, QU x phi) term = case substInFormula phi x term of
 quE _ _ = Left "quE: nothing to eliminate"
 
 andI :: Theorem -> Theorem -> Theorem 
-andI (gamma, phi) (delta, psi) = (List.nub $ gamma ++ delta, Binop phi And psi)
+andI (gamma, phi) (delta, psi) = (List.union gamma delta, Binop phi And psi)
 
 andE1 :: Theorem -> Either String Theorem 
 andE1 (gamma, Binop phi And psi) = Right (gamma, phi)
@@ -156,11 +156,11 @@ orE (gamma, Binop phi Or psi) (delta, xi) (sigma, xi') = if xi == xi'
                                                               sigma' = filter (/= psi) sigma 
 orE _ _ _ = Left "orE: nothing to eliminate"
 
-{-    Γ ⊢ ϕ[x/t]
-     -------------∃i  Niech ϕ' := ϕ[x/t]. Cofamy podstawienie.
-       Γ ⊢ ∃x ϕ      -}
-qeI :: Theorem -> Formula -> String -> Term -> Either String Theorem 
-qeI (gamma, phi') phi var term 
+{-    Γ ⊢ φ[x/t]
+     -------------∃i  Niech φ' := φ[x/t]. Cofamy podstawienie.
+       Γ ⊢ ∃x φ      -}
+qeI :: Formula -> String -> Term -> Theorem -> Either String Theorem 
+qeI phi var term (gamma, phi') 
   | substInFormula phi var term == Just phi' = Right (gamma, QE var phi)
   | otherwise = Left "qeI: formula mismatch"
 
@@ -171,11 +171,7 @@ qeE (gamma, QE x phi) (delta, psi)
   where delta' = filter (/= phi) delta 
 qeE _ _ = Left "qeE: nothing to eliminate"
 
-rbv :: Theorem -> String -> Either String Theorem 
-rbv (gamma, QU x phi) y = case substInFormula phi x (Var y) of
-                            Nothing -> Left "rbv: inadmissible substitution; bad choice of name"
-                            Just phi' -> Right (gamma, QU y phi')
-rbv (gamma, QE x phi) y = case substInFormula phi x (Var y) of
-                            Nothing -> Left "rbv: inadmissible substitution; bad choice of name"
-                            Just phi' -> Right (gamma, QE y phi')
-rbv _ _ = Left "Nothing to rename"
+equiv :: Theorem -> Formula -> Either String Theorem 
+equiv (gamma, phi) psi 
+  | phi == psi = Right (gamma, psi)
+  | otherwise = Left "equiv: not equivalent"
