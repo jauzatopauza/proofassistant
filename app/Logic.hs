@@ -10,14 +10,28 @@ data Formula =
     | Binop Formula BinaryConnective Formula  -- spójniki binarne w wyliczeniu BinaryConnective
     | QE String Formula                       -- kwantyfikator egzystencjalny
     | QU String Formula                       -- kwantyfikator uniwersalny
-    deriving Show
 
 data Term = 
       Var String  
     | Func String [Term]
-    deriving Show
 
-data BinaryConnective = And | Or | Imp deriving Show
+data BinaryConnective = And | Or | Imp 
+
+instance Show BinaryConnective where 
+  show And = "∧"
+  show Or = "∨"
+  show Imp = "⇒"
+
+instance Show Term where 
+  show (Var s) = s 
+  show (Func s ts) = s ++ "(" ++ tail (tail (foldl (\acc term -> acc ++ ", " ++ show term) "" ts)) ++ ")"
+
+instance Show Formula where 
+  show (Rel s ts) = s ++ "(" ++ tail (tail (foldl (\acc term -> acc ++ ", " ++ show term) "" ts)) ++ ")"
+  show Spike = "⊥"
+  show (Binop phi op psi) = "(" ++ show phi ++ " " ++ show op ++ " " ++ show psi ++ ")"
+  show (QU s phi) = "(∀ " ++ s ++ " " ++ show phi ++ ")"
+  show (QE s phi) = "(∃ " ++ s ++ " " ++ show phi ++ ")"
 
 type Theorem = ([Formula], Formula)
 

@@ -20,7 +20,8 @@ writeError err = writeToView ("Error. " <> err)
 writeToView :: String -> Gtk.TextView -> IO ()
 writeToView s view = do  buf <- get view #buffer 
                          ins <- Gtk.textBufferGetInsert buf
-                         it <- Gtk.textBufferGetIterAtMark buf ins 
+                         it <- Gtk.textBufferGetIterAtMark buf ins
+                         Gtk.textIterForwardToEnd it 
                          Gtk.textBufferInsert buf it (Text.pack s <> "\n") (-1)
 
 tryAxiom :: (Location, String) -> MVar (Location, String) -> Theorem -> Gtk.TextView -> IO ()
@@ -80,12 +81,9 @@ runAssistant parseAxiom
                 case res of 
                     [] -> getEventKeyKeyval e >>= keyvalName >>= \s -> 
                             case s of 
-                                Just "Return" -> do buf <- get txtRepl #buffer 
-                                                    ins <- Gtk.textBufferGetInsert buf
-                                                    it <- Gtk.textBufferGetIterAtMark buf ins 
-                                                    txt1 <- get entry #text 
+                                Just "Return" -> do txt1 <- get entry #text 
                                                     set entry [#text := ""]
-                                                    Gtk.textBufferInsert buf it (txt1 <> "\n") (-1)
+                                                    writeToView (Text.unpack txt1) txtRepl
                                                     
                                                     let txt = Text.unpack txt1 
                                                     mlc <- tryTakeMVar lc 

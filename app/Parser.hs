@@ -76,15 +76,21 @@ parseFormula s = case parse mainParser "" s of
 initialCommandParser :: Parser (Location, String)
 initialCommandParser = string "prove " >> many1 ident >>= \name -> mainParser >>= \phi -> return (proof [] phi, name)
 
+{-
+Był zamysł, aby ułatwić użytkownikowi korzystanie z założeń, umożliwiając mu podać zamiast formuły 
+nazwę założenia poprzedzoną '#'. To nie działa. Nie pasuje do funkcji z modułu Proof, 
+gdyż żadna z nich nie przyjmuje formuły, którą eliminuje, w całości.
+
 refChoice :: Assumptions -> (Formula -> Parser (Either String Location)) -> Parser (Either String Location)
 refChoice gamma cont = (char '#' >> many1 alphaNum >>= \assmname -> (case lookup assmname gamma of 
                                                                                 Just phi -> cont phi
                                                                                 Nothing -> return $ Left "eval fail"))
                          <|> (mainParser >>= \phi -> cont phi)
+-}
 
 -- gdy istnieje dowód
 activeCommandParser :: [(String, Theorem)] -> Location -> Parser (Either String Location)
-activeCommandParser thms loc@(Goal gamma _, _) 
+activeCommandParser thms loc 
                         = choice [try (string "intro_imp ") >> many1 alphaNum >>= \name -> return $ introImp name loc,
                                   try (string "intro_qu")  >> return (introForall loc),
                                   try (string "intro_and") >> return (introAnd loc),
@@ -96,22 +102,24 @@ activeCommandParser thms loc@(Goal gamma _, _)
                                      varname <- many ident 
                                      m_whiteSpace
                                      term <- termParser 
-                                     refChoice gamma (return . elimForall loc varname term ),
-                                  try (string "elim_imp ") >> refChoice gamma (return . elimImp loc),
+                                     phi <- mainParser
+                                     return $ elimForall loc varname term phi,
+                                  try (string "elim_imp ") >> mainParser >>= \phi -> return (elimImp loc phi),
                                   try (string "elim_bot ") >> return (elimSpike loc),
-                                  try (string "elim_and ") >> refChoice gamma (\phi ->  (string "left" >> return (elimAnd loc phi True))
+                                  try (string "elim_and ") >> mainParser >>= (\phi ->  (string "left" >> return (elimAnd loc phi True))
                                                                                     <|> (string "right" >> return (elimAnd loc phi False))),
-                                  try (string "elim_or ") >> refChoice gamma (\phi -> do assm1 <- many1 ident 
-                                                                                         refChoice gamma (\psi -> do assm2 <- many1 ident 
+                                  try (string "elim_or ") >> mainParser >>= (\phi -> do  assm1 <- many1 ident 
+                                                                                         mainParser >>= (\psi -> do  assm2 <- many1 ident 
                                                                                                                      return (elimOr loc phi assm1 psi assm2))),
-                                  try (string "elim_qe ") >> refChoice gamma (\phi -> do var <- many1 ident 
+                                  try (string "elim_qe ") >> mainParser >>= (\phi -> do  var <- many1 ident 
+                                                                                         m_whiteSpace
                                                                                          assm  <- many1 ident 
                                                                                          return $ elimExists loc phi var assm),
                                   try (string "apply_assm ") >> many1 ident >>= \assm -> return (readyByAssumption loc assm),
                                   try (string "apply_thm ") >> many1 ident >>= \thmname -> case lookup thmname thms of 
                                                                                             Just thm -> return (readyByTheorem loc thm)
                                                                                             Nothing -> return $ Left "eval fail",
-                                  try (string "equiv ") >> refChoice gamma (return . equivRule loc),
+                                  try (string "equiv ") >> mainParser >>= (return . equivRule loc),
                                   try (string "uncons") >> return (Right (Proof.uncons loc)),
                                   string "abandon" >> return (Left "ABANDONED")] 
 
