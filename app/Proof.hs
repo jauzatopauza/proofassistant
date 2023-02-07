@@ -123,7 +123,7 @@ caseDown pf ctx cnt = case pf of
                         Ready _ -> collapseToTheorem (cnt pf) >>= wrap ctx 
                         _       -> Right (cnt pf, ctx)
 
-seekUp :: Location -> Either String Location -- samo gęste
+seekUp :: Location -> Either String Location 
 seekUp (pf, Root) = Right (pf, Root)
 seekUp (pf, DownImpI phi ctx) = caseDown pf ctx (ImpI phi)
 seekUp (pf1, LeftImpE ctx pf2) = case seekDown (pf2, RightImpE pf1 ctx) of 
