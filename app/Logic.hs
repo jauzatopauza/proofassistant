@@ -10,14 +10,28 @@ data Formula =
     | Binop Formula BinaryConnective Formula  -- spójniki binarne w wyliczeniu BinaryConnective
     | QE String Formula                       -- kwantyfikator egzystencjalny
     | QU String Formula                       -- kwantyfikator uniwersalny
-    deriving Show
 
 data Term = 
       Var String  
     | Func String [Term]
-    deriving Show
 
-data BinaryConnective = And | Or | Imp deriving Show
+data BinaryConnective = And | Or | Imp 
+
+instance Show BinaryConnective where 
+  show And = "∧"
+  show Or = "∨"
+  show Imp = "⇒"
+
+instance Show Term where 
+  show (Var s) = s 
+  show (Func s ts) = s ++ "(" ++ tail (tail (foldl (\acc term -> acc ++ ", " ++ show term) "" ts)) ++ ")"
+
+instance Show Formula where 
+  show (Rel s ts) = s ++ "(" ++ tail (tail (foldl (\acc term -> acc ++ ", " ++ show term) "" ts)) ++ ")"
+  show Spike = "⊥"
+  show (Binop phi op psi) = "(" ++ show phi ++ " " ++ show op ++ " " ++ show psi ++ ")"
+  show (QU s phi) = "(∀ " ++ s ++ " " ++ show phi ++ ")"
+  show (QE s phi) = "(∃ " ++ s ++ " " ++ show phi ++ ")"
 
 type Theorem = ([Formula], Formula)
 
@@ -84,7 +98,7 @@ eqMap Spike Spike _ = True
 eqMap Spike _ _ = False 
 eqMap (Rel r terms1) (Rel s terms2) m = (r == s) && eqMapTerms terms1 terms2 m 
 eqMap (Rel _ _) _ _ = False 
-eqMap (Binop phi1 _ psi1) (Binop phi2 _ psi2) m = eqMap phi1 phi2 m && eqMap phi2 psi2 m 
+eqMap (Binop phi1 _ psi1) (Binop phi2 _ psi2) m = eqMap phi1 phi2 m && eqMap psi1 psi2 m 
 eqMap (Binop {}) _ _ = False 
 eqMap (QE x phi) (QE y psi) m = eqMap phi psi $ Map.insertWithKey (\ x y z -> y) x y m   -- Skrajny przykład: ∀x R(x) ∧ (∃x H(x)) == ∀x R(x) ∧ (∃y H(y))
 eqMap (QE _ _) _ _ = False 

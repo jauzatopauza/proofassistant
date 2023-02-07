@@ -20,8 +20,8 @@ data Proof =
     | OrI2 Formula Proof  -- drugi składnik udowodniony, pierwszy nie wiadomo skąd
     | OrE Proof Proof Proof 
     | QEI Formula String Term Proof -- w formule ϕ za zmienną x podstawiamy term t i udowadniamy wynik
-    | QEE Proof Proof -- udowadniamy, że coś istnieje, i korzystamy z tego w innym dowodzie; może być potrzebne skorzystanie z RBV
-    | Equiv Formula Proof   -- dowód formuły z kwantyfikatorem i nowa nazwa zmiennej związanej
+    | QEE Proof Proof -- udowadniamy, że coś istnieje, i korzystamy z tego w innym dowodzie; 
+    | Equiv Formula Proof   -- nowa formuła równa według (==)
 
 data Path = 
       Root 
@@ -123,7 +123,7 @@ caseDown pf ctx cnt = case pf of
                         Ready _ -> collapseToTheorem (cnt pf) >>= wrap ctx 
                         _       -> Right (cnt pf, ctx)
 
-seekUp :: Location -> Either String Location -- samo gęste
+seekUp :: Location -> Either String Location 
 seekUp (pf, Root) = Right (pf, Root)
 seekUp (pf, DownImpI phi ctx) = caseDown pf ctx (ImpI phi)
 seekUp (pf1, LeftImpE ctx pf2) = case seekDown (pf2, RightImpE pf1 ctx) of 
@@ -178,8 +178,6 @@ introImp :: String -> Location -> Either String Location
 introImp s (Goal gamma (Binop phi Imp psi), ctx) = Right (Goal (List.union gamma [(s, phi)]) psi, DownImpI phi ctx)
 introImp _ _ = Left "introImp: no implication to introduce"
 
--- w tym miejscu użytkownik wybiera świeżą zmienną
--- można od razu zrobić RBV
 introForall ::  Location -> Either String Location 
 introForall (Goal gamma (QU x phi), ctx) 
   | not (any (freeInFormula x . snd) gamma) = Right (Goal gamma phi, DownQUI x ctx)
@@ -207,7 +205,10 @@ elimSpike _  = Left "elimSpike: not at goal"
 readyByAssumption :: Location -> String -> Either String Location 
 readyByAssumption (Goal gamma phi, ctx) ass = case lookup ass gamma of 
                                                 Just psi -> if psi == phi 
-                                                              then next (Ready $ byAssumption phi, ctx) 
+                                                              then let thm = byAssumption psi in 
+                                                                case next (Ready thm, ctx) of 
+                                                                      Left "next: no more goals" -> Right (Ready thm, ctx)
+                                                                      res -> res
                                                               else Left "readyByAssumption: wrong assumption for this goal"
                                                 Nothing  -> Left "readyByAssumption: no such assumption"
 readyByAssumption _ _ = Left "readyByAssumption: not at goal"
@@ -256,3 +257,48 @@ elimExists _ _ _ _ = Left "elimExists: not at goal"
 equivRule :: Location -> Formula -> Either String Location 
 equivRule (Goal gamma phi, ctx) psi = Right (Goal gamma psi, DownEquiv phi ctx)
 equivRule _ _ = Left "equivRule: not at goal"
+
+isGoal :: Proof -> Bool 
+isGoal (Goal _ _) = True 
+isGoal _ = False 
+
+uncons :: Location -> Location
+uncons (Goal gamma phi, DownImpI psi ctx) = (Goal (List.filter ((/= psi) . snd) gamma) (Binop phi Imp psi), ctx)
+
+uncons (Goal gamma phi, LeftImpE ctx pf2) = uncons (ImpE (Goal gamma phi) pf2, ctx)
+uncons (Goal gamma phi, RightImpE pf1 ctx) = uncons (ImpE pf1 (Goal gamma phi), ctx)
+uncons (ImpE (Goal gamma (Binop phi Imp psi)) (Goal _ _), ctx) = (Goal gamma psi, ctx)
+
+uncons (Goal gamma _, DownSpikeE psi ctx) = (Goal gamma psi, ctx)
+uncons (Goal gamma phi, DownQUI s ctx) = (Goal gamma (QU s phi), ctx)
+uncons (Goal gamma (QU x phi), DownQUE t ctx) = case substInFormula phi x t of 
+                                                  Just phi' -> (Goal gamma phi', ctx)
+                                                  Nothing   -> undefined -- niemożliwe
+
+uncons (Goal gamma phi, LeftAndI ctx pf2) = uncons (AndI (Goal gamma phi) pf2, ctx)
+uncons (Goal gamma phi, RightAndI pf1 ctx) = uncons (AndI pf1 (Goal gamma phi), ctx)
+uncons (AndI (Goal gamma phi) (Goal _ psi), ctx) = (Goal gamma (Binop phi And psi), ctx)
+
+uncons (Goal gamma (Binop phi And _), DownAndE1 ctx) = (Goal gamma phi, ctx)
+uncons (Goal gamma (Binop _ And psi), DownAndE2 ctx) = (Goal gamma psi, ctx)
+
+uncons (Goal gamma phi, DownOrI1 psi ctx) = (Goal gamma (Binop phi Or psi), ctx)
+uncons (Goal gamma psi, DownOrI2 phi ctx) = (Goal gamma (Binop phi Or psi), ctx)
+
+uncons (Goal gamma phi, LeftOrE ctx pf2 pf3) = uncons (OrE (Goal gamma phi) pf2 pf3, ctx)
+uncons (Goal gamma phi, MiddleOrE pf1 ctx pf3) = uncons (OrE pf1 (Goal gamma phi) pf3, ctx)
+uncons (Goal gamma phi, RightOrE pf1 pf2 ctx) = uncons (OrE pf1 pf2 (Goal gamma phi), ctx)
+uncons (OrE (Goal gamma _) (Goal _ lambda) (Goal _ _), ctx) = (Goal gamma lambda, ctx)
+
+uncons (Goal gamma phi', DownQEI phi s _ ctx) = (Goal gamma (QE s phi), ctx)
+
+uncons (pf1, LeftQEE ctx pf2) = uncons (QEE pf1 pf2, ctx)
+uncons (pf2, RightQEE pf1 ctx) = uncons (QEE pf1 pf2, ctx)
+uncons (QEE (Goal gamma (QE x phi)) (Goal delta psi), ctx) = (Goal gamma psi, ctx)
+
+uncons (Goal gamma _, DownEquiv phi ctx) = (Goal gamma phi, ctx)
+uncons loc
+  | not $ isGoal (fst loc) = case seekDown loc of 
+                            Just loc' -> uncons loc' 
+                            Nothing   -> loc 
+  | otherwise = undefined 
