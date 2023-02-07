@@ -27,14 +27,17 @@ executable proofassistant
     -- Modules included in this executable, other than Main.
     other-modules:    Logic, 
                       Proof,
-                      Parser 
+                      Parser ,
+                      Gui
 
     -- LANGUAGE extensions used by modules in this package.
-    -- other-extensions: OverloadedLabels, OverloadedStrings
+    other-extensions: OverloadedLabels, OverloadedStrings
     build-depends:    base ^>=4.16.4.0,
     		          gi-gtk,
+                      gi-gdk,
     		          haskell-gi-base,
                       containers,
-                      parsec
+                      parsec,
+                      text
     hs-source-dirs:   app
     default-language: Haskell2010

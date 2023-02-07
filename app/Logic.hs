@@ -84,7 +84,7 @@ eqMap Spike Spike _ = True
 eqMap Spike _ _ = False 
 eqMap (Rel r terms1) (Rel s terms2) m = (r == s) && eqMapTerms terms1 terms2 m 
 eqMap (Rel _ _) _ _ = False 
-eqMap (Binop phi1 _ psi1) (Binop phi2 _ psi2) m = eqMap phi1 phi2 m && eqMap phi2 psi2 m 
+eqMap (Binop phi1 _ psi1) (Binop phi2 _ psi2) m = eqMap phi1 phi2 m && eqMap psi1 psi2 m 
 eqMap (Binop {}) _ _ = False 
 eqMap (QE x phi) (QE y psi) m = eqMap phi psi $ Map.insertWithKey (\ x y z -> y) x y m   -- Skrajny przykład: ∀x R(x) ∧ (∃x H(x)) == ∀x R(x) ∧ (∃y H(y))
 eqMap (QE _ _) _ _ = False 
