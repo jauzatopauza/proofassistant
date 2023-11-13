@@ -76,18 +76,6 @@ parseFormula s = case parse mainParser "" s of
 initialCommandParser :: Parser (Location, String)
 initialCommandParser = string "prove " >> many1 ident >>= \name -> mainParser >>= \phi -> return (proof [] phi, name)
 
-{-
-Był zamysł, aby ułatwić użytkownikowi korzystanie z założeń, umożliwiając mu podać zamiast formuły 
-nazwę założenia poprzedzoną '#'. To nie działa. Nie pasuje do funkcji z modułu Proof, 
-gdyż żadna z nich nie przyjmuje formuły, którą eliminuje, w całości.
-
-refChoice :: Assumptions -> (Formula -> Parser (Either String Location)) -> Parser (Either String Location)
-refChoice gamma cont = (char '#' >> many1 alphaNum >>= \assmname -> (case lookup assmname gamma of 
-                                                                                Just phi -> cont phi
-                                                                                Nothing -> return $ Left "eval fail"))
-                         <|> (mainParser >>= \phi -> cont phi)
--}
-
 -- gdy istnieje dowód
 activeCommandParser :: [(String, Theorem)] -> Location -> Parser (Either String Location)
 activeCommandParser thms loc 
